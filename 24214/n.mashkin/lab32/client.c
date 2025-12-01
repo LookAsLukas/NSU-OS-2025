@@ -29,7 +29,7 @@ int main() {
     }
 
     // Read from stdin and write to socket
-    char buffer[1024];
+    char buffer[4096];
     ssize_t n;
     while ((n = read(STDIN_FILENO, buffer, sizeof(buffer))) > 0) {
         if (write(sock_fd, buffer, n) != n) {

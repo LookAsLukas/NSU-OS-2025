@@ -12,7 +12,7 @@
 
 int listen_fd;
 int *client_fds = NULL;
-int max_clients = 0;
+int max_clients = 1;
 int num_clients = 0;
 
 void sigio_handler(int sig) {
@@ -22,8 +22,8 @@ void sigio_handler(int sig) {
 
     // Accept new connections
     while ((new_fd = accept(listen_fd, (struct sockaddr*)&addr, &len)) != -1) {
-        if (num_clients >= max_clients) {
-            max_clients += 10;
+        if (num_clients == max_clients) {
+            max_clients *= 2;
             client_fds = realloc(client_fds, max_clients * sizeof(int));
         }
         client_fds[num_clients++] = new_fd;
@@ -33,10 +33,9 @@ void sigio_handler(int sig) {
 
     // Read data from clients
     for (int i = 0; i < num_clients; i++) {
-        char buffer[1024];
+        char buffer[4096];
         ssize_t n;
-        while ((n = read(client_fds[i], buffer, sizeof(buffer) - 1)) > 0) {
-            buffer[n] = '\0';
+        while ((n = read(client_fds[i], buffer, 4096)) > 0) {
             for (int j = 0; j < n; j++) {
                 if (buffer[j] >= 'a' && buffer[j] <= 'z') {
                     buffer[j] -= 32;
@@ -75,13 +74,14 @@ int main() {
     }
 
     // Listen for connections
-    if (listen(listen_fd, 5) == -1) {
+    if (listen(listen_fd, 0) == -1) {
         perror("listen");
         close(listen_fd);
         exit(1);
     }
 
     // Set up signal handler for SIGIO
+    client_fds = malloc(sizeof(int));
     sa.sa_handler = sigio_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
