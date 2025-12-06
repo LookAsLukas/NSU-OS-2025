@@ -16,22 +16,24 @@ int max_clients = 1;
 int num_clients = 0;
 
 void sigio_handler(int sig) {
-    struct sockaddr_un addr;
-    socklen_t len = sizeof(addr);
     int new_fd;
 
-    // Accept new connections
-    while ((new_fd = accept(listen_fd, (struct sockaddr*)&addr, &len)) != -1) {
+    while ((new_fd = accept(listen_fd, NULL, NULL)) != -1) {
         if (num_clients == max_clients) {
             max_clients *= 2;
             client_fds = realloc(client_fds, max_clients * sizeof(int));
+            if (client_fds == NULL) {
+                perror("realloc");
+                close(listen_fd);
+                free(client_fds);
+                exit(1);
+            }
         }
         client_fds[num_clients++] = new_fd;
         fcntl(new_fd, F_SETFL, O_NONBLOCK | O_ASYNC);
         fcntl(new_fd, F_SETOWN, getpid());
     }
 
-    // Read data from clients
     for (int i = 0; i < num_clients; i++) {
         char buffer[4096];
         ssize_t n;
@@ -41,7 +43,13 @@ void sigio_handler(int sig) {
                     buffer[j] -= 32;
                 }
             }
-            write(STDOUT_FILENO, buffer, n);
+            
+            if (write(STDOUT_FILENO, buffer, n) != n) {
+                perror("write");
+                close(listen_fd);
+                free(client_fds);
+                exit(1);
+            }
         }
         if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
             close(client_fds[i]);
@@ -55,14 +63,12 @@ int main() {
     struct sockaddr_un addr;
     struct sigaction sa;
 
-    // Create socket
     listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (listen_fd == -1) {
         perror("socket");
         exit(1);
     }
 
-    // Bind socket
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
@@ -73,14 +79,12 @@ int main() {
         exit(1);
     }
 
-    // Listen for connections
     if (listen(listen_fd, 0) == -1) {
         perror("listen");
         close(listen_fd);
         exit(1);
     }
 
-    // Set up signal handler for SIGIO
     client_fds = malloc(sizeof(int));
     sa.sa_handler = sigio_handler;
     sigemptyset(&sa.sa_mask);
@@ -88,16 +92,15 @@ int main() {
     if (sigaction(SIGIO, &sa, NULL) == -1) {
         perror("sigaction");
         close(listen_fd);
+        free(client_fds);
         exit(1);
     }
 
-    // Configure listening socket for asynchronous I/O
     fcntl(listen_fd, F_SETFL, O_NONBLOCK | O_ASYNC);
     fcntl(listen_fd, F_SETOWN, getpid());
 
     printf("Server listening on %s\n", SOCKET_PATH);
 
-    // Main loop: wait for signals
     while (1) {
         pause();
     }

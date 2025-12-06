@@ -11,14 +11,12 @@ int main() {
     int sock_fd;
     struct sockaddr_un addr;
 
-    // Create socket
     sock_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sock_fd == -1) {
         perror("socket");
         exit(1);
     }
 
-    // Connect to server
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
@@ -28,14 +26,18 @@ int main() {
         exit(1);
     }
 
-    // Read from stdin and write to socket
     char buffer[4096];
     ssize_t n;
     while ((n = read(STDIN_FILENO, buffer, sizeof(buffer))) > 0) {
         if (write(sock_fd, buffer, n) != n) {
             perror("write");
+            close(sock_fd);
             break;
         }
+    }
+    if (n == -1) {
+        perror("read");
+        close(sock_fd);
     }
 
     close(sock_fd);
